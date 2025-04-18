@@ -104,6 +104,23 @@ def awq_dequantize_kernel(
     tl.store(result_ptr + result_offsets, iweights, result_masks)
 
 
+def get_autotune_config():
+    block_size_n_options = [ 256, 128, 64 ]
+    block_size_k_options = [ 32, 16 ]
+    configs = [
+        triton.Config({
+            'BLOCK_SIZE_N': n,
+            'BLOCK_SIZE_K': k
+        })
+        for n in block_size_n_options
+        for k in block_size_k_options
+    ]
+    return configs
+
+@triton.autotune(
+    configs=get_autotune_config(),
+    key=['N', 'K'],
+)
 @triton.jit
 def awq_gemm_kernel(a_ptr, b_ptr, c_ptr, zeros_ptr, scales_ptr, M, N, K,
                     group_size, BLOCK_SIZE_M: tl.constexpr,
@@ -271,10 +288,7 @@ def awq_gemm_triton(input: torch.Tensor,
                     qweight: torch.Tensor,
                     scales: torch.Tensor,
                     qzeros: torch.Tensor,
-                    split_k_iters: int,
-                    block_size_m: int = 32,
-                    block_size_n: int = 32,
-                    block_size_k: int = 32) -> torch.Tensor:
+                    split_k_iters: int) -> torch.Tensor:
     M, K = input.shape
     N = qweight.shape[1] * 8
     group_size = qweight.shape[0] // qzeros.shape[0]
@@ -309,9 +323,7 @@ def awq_gemm_triton(input: torch.Tensor,
                           N,
                           K,
                           group_size,
-                          BLOCK_SIZE_M=block_size_m,
-                          BLOCK_SIZE_N=block_size_n,
-                          BLOCK_SIZE_K=block_size_k,
+                          BLOCK_SIZE_M=32,
                           SPLIT_K=split_k_iters)
 
     result = result.sum(0)
