@@ -1,13 +1,72 @@
 vLLM for gfx906
 ===================
 
-This is modified vLLM, work with (and only work with) AMD gfx906 GPUs
-e.g. Radeon VII / Radeon Pro VII / Instinct MI50 / Instinct MI60.
+This is a modified version of vLLM, works with (and only works with) AMD gfx906
+GPUs such as Radeon VII / Radeon Pro VII / Instinct MI50 / Instinct MI60.
 
-This modified vLLM do 2 things:
+This modified version of vLLM does two things:
 
-1. make vLLM could run on gfx906 GPUs.
-2. optimize quantization GEMV kernels for gfx906 GPUs.
+1. Makes vLLM could run on gfx906 GPUs.
+2. Optimizes quantization GEMV kernels for gfx906 GPUs.
+
+
+NEWS
+-------------------
+
+2025-04-20:
+
+The reason behind Qwen2 GPTQ models outputting infinite "!!!!!!!!!!!!!!!!!!!"
+has been identified. For detailes, see:
+https://modelscope.cn/models/tclf90/qwq-32b-gptq-int4
+
+In short: This is not an issue with model file itself. When the input prompt
+is too short, the computation for prefill is more like GEMV then GEMM, vLLM uses
+a different CUDA kernel to compute, which has some issues with prefill workround.
+
+There are two workarounds:
+1. Prepend some junk data to the prompt to make it longer.
+2. Adjust the threshold for distinguishing between GEMM and GEMV.
+
+In the original post, the author recommends changing the threshold to 0.
+However, this significantly hurts performance on gfx906 GPUs. I changed the
+threshold from 50 (for 4-bit) / 24 (for 8-bit) to 8/8. I tested several models
+with very short inputs, and it worked fine without any noticeable performance
+difference (when the number of concurrent requests is ≤ 8).
+
+
+2025-04-19:
+
+I attempted to optimize AWQ, by adding '@triton.autotune' to triton_awq.py.
+This improved performance by about 50%, but it's still very slow on gfx906 GPUs.
+
+I also tried on an NVIDIA Turing GPU. The origin awq_triton.py is slow on
+Turing too, but this autotune technique improves it's performance to match the
+default AWQ CUDA implementation.
+
+This is somewhat ironic: I was optimizing awq_triton.py for AMD's GPU but
+failed to make it usable, yet I made NVIDIA's GPU usable first.
+
+
+2025-04-01:
+
+Optimized the GEMV kernel for GGUF q4_1 and q8_0 quantization, achieving
+10%~20% performance improve.
+
+
+NOTES
+-------------------
+
+GPTQ quantization is the only recommended quantization format to use.
+
+GPTQ models with desc_act=True will produce bad response when using tensor
+parallelism. See:
+https://github.com/vllm-project/vllm/issues/7374
+
+GGUF quantization is functional but not recommended due to poor performance
+with batched requests.
+
+If you are runing a unquantized bfloat16 model, add '--dtype float16' to the
+parameters for better performance.
 
 
 INSTALL
