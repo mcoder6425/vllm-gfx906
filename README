@@ -1,0 +1,36 @@
+vLLM for gfx906
+===================
+
+This is modified vLLM, work with (and only work with) AMD gfx906 GPUs
+e.g. Radeon VII / Radeon Pro VII / Instinct MI50 / Instinct MI60.
+
+This modified vLLM do 2 things:
+
+1. make vLLM could run on gfx906 GPUs.
+2. optimize quantization GEMV kernels for gfx906 GPUs.
+
+
+INSTALL
+-------------------
+
+You MUST INSTALL triton-gfx906 v3.2.0-gfx906 first, see:
+https://github.com/nlzy/triton-gfx906
+
+```
+cd vllm-gfx906
+
+python3 -m venv vllmenv
+source vllmenv/bin/activate
+
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
+pip3 install -r requirements/rocm-build.txt
+pip3 install -r requirements/rocm.txt
+
+python3 setup.py develop
+```
+
+
+CREDITS
+-------------------
+
+https://github.com/Said-Akbar/vllm-rocm
