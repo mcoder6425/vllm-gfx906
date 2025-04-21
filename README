@@ -13,6 +13,11 @@ This modified version of vLLM does two things:
 NEWS
 -------------------
 
+2025-04-21:
+
+Update vLLM to v0.8.4
+
+
 2025-04-20:
 
 The reason behind Qwen2 GPTQ models outputting infinite "!!!!!!!!!!!!!!!!!!!"
