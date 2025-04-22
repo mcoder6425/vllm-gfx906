@@ -13,6 +13,14 @@ This modified version of vLLM does two things:
 NEWS
 -------------------
 
+2025-04-22:
+
+I have fixed GPTQ Int4/Int8 GEMV kernel, by changing dot product accumulator
+type from FP16 to FP32 to avoid calculation overflow. Thanks to the fdot2
+intrinsic introduced in Vega 12/20, using FP32 accumulators remains fast and
+guarantees no overflow.
+
+
 2025-04-21:
 
 Update vLLM to v0.8.4
