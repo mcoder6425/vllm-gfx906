@@ -54,34 +54,11 @@ __host__ __forceinline__ hipblasStatus_t __compat_hipblasHgemm(
 #endif
 
 __forceinline__ __device__ float dot22_8_f(half2 (&dq)[4], const half* a_ptr) {
-  half2 result = {};
-  const half2* a2_ptr = (const half2*)a_ptr;
-#pragma unroll
-  for (int i = 0; i < 4; i++) result = __hfma2(dq[i], *a2_ptr++, result);
-  return __half2float(__low2half(result)) + __half2float(__high2half(result));
-}
-
-__forceinline__ __device__ half dot22_8_h(half2 (&dq)[4], const half* a_ptr,
-                                          const half g_result,
-                                          const half qs_h) {
-  // Use FP32 accumulator to avoid potential overflow since unscaled weights are
-  // in the range -128..127
-
   float result = {};
-#pragma unroll
-  for (int i = 0; i < 4; i++) {
-    half2 w01 = dq[i];
-    float w0 = __low2float(w01);
-    float w1 = __high2float(w01);
-    float x0 = __half2float(*a_ptr++);
-    float x1 = __half2float(*a_ptr++);
-    result = fma(w0, x0, result);
-    result = fma(w1, x1, result);
-  }
-  float qs = __half2float(qs_h);
-  result *= qs;
-  half result_h = __float2half_rn(result);
-  return __hadd(result_h, g_result);
+  const half2* a2_ptr = (const half2*)a_ptr;
+  #pragma unroll
+  for (int i = 0; i < 4; i++) result = __ockl_fdot2(dq[i], *a2_ptr++, result, true);
+  return result;
 }
 
 __forceinline__ __device__ half dot22_16_h(half2 (&dq)[8], const half* a_ptr,
@@ -569,7 +546,7 @@ __global__ void gemm_half_q_half_gptq_8bit_kernel(
   b_gptq_qzeros_.item4(zeros, group, n);
   b_gptq_scales_.item4(scales, group, n);
   // Column result
-  half block_c[m_count][4] = {};
+  float block_c[m_count][4] = {};
 
   // Dequantize and multiply
   int k = offset_k;
@@ -599,15 +576,22 @@ __global__ void gemm_half_q_half_gptq_8bit_kernel(
       dequant_8bit_8(load_int4[0].w, load_int4[1].w, dq[3], size_n,
                      zeros[3] + 1);
 
+      float scalesf[4];
+#pragma unroll
+      for (int i = 0; i < 4; i++) {
+        scalesf[i] = __half2float(scales[i]);
+      }
+
+      #pragma unroll
       for (int m = 0; m < m_count; m++) {
-        block_c[m][0] =
-            dot22_8_h(dq[0], a_ptr + m * a_stride, block_c[m][0], scales[0]);
-        block_c[m][1] =
-            dot22_8_h(dq[1], a_ptr + m * a_stride, block_c[m][1], scales[1]);
-        block_c[m][2] =
-            dot22_8_h(dq[2], a_ptr + m * a_stride, block_c[m][2], scales[2]);
-        block_c[m][3] =
-            dot22_8_h(dq[3], a_ptr + m * a_stride, block_c[m][3], scales[3]);
+        block_c[m][0] = fma(dot22_8_f(dq[0], a_ptr + m * a_stride), scalesf[0],
+                        block_c[m][0]);
+        block_c[m][1] = fma(dot22_8_f(dq[1], a_ptr + m * a_stride), scalesf[1],
+                            block_c[m][1]);
+        block_c[m][2] = fma(dot22_8_f(dq[2], a_ptr + m * a_stride), scalesf[2],
+                            block_c[m][2]);
+        block_c[m][3] = fma(dot22_8_f(dq[3], a_ptr + m * a_stride), scalesf[3],
+                            block_c[m][3]);
       }
       a_ptr += 8;
     }
@@ -616,8 +600,10 @@ __global__ void gemm_half_q_half_gptq_8bit_kernel(
 
   for (int m = 0; m < m_count; m++) {
     half2* out = (half2*)c_.item_ptr(offset_m + m, n);
-    half2 result01 = __halves2half2(block_c[m][0], block_c[m][1]);
-    half2 result23 = __halves2half2(block_c[m][2], block_c[m][3]);
+    half2 result01 = __halves2half2(__float2half_rn(block_c[m][0]),
+                                    __float2half_rn(block_c[m][1]));
+    half2 result23 = __halves2half2(__float2half_rn(block_c[m][2]),
+                                    __float2half_rn(block_c[m][3]));
     atomicAdd(out, result01);
     atomicAdd(out + 1, result23);
   }
