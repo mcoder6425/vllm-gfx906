@@ -13,6 +13,12 @@ This modified version of vLLM does two things:
 NEWS
 -------------------
 
+2025-04-28:
+
+Update rocm to 6.3
+Update torch to 2.7.0
+Update triton to 3.3.0
+
 2025-04-22:
 
 I have fixed GPTQ Int4/Int8 GEMV kernel, by changing dot product accumulator
@@ -85,8 +91,8 @@ parameters for better performance.
 INSTALL
 -------------------
 
-You MUST INSTALL triton-gfx906 v3.2.0-gfx906 first, see:
-https://github.com/nlzy/triton-gfx906
+You MUST INSTALL triton-gfx906 v3.3.0+gfx906 first, see:
+https://github.com/nlzy/triton-gfx906/tree/v3.3.0+gfx906
 
 ```
 cd vllm-gfx906
@@ -94,11 +100,11 @@ cd vllm-gfx906
 python3 -m venv vllmenv
 source vllmenv/bin/activate
 
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
+pip3 install 'torch==2.7' torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.3
 pip3 install -r requirements/rocm-build.txt
 pip3 install -r requirements/rocm.txt
 
-python3 setup.py develop
+pip3 install --no-build-isolation .
 ```
 
 
