@@ -13,11 +13,33 @@ This modified version of vLLM does two things:
 NEWS
 -------------------
 
+2025-04-29:
+
+I have fixed GGUF batched request performance issue. Now it's usable, but still
+not as fast as GPTQ.
+
+In origin llama.cpp GEMV kernel, there are some optimizations for batched
+requests, but those optimizations have been removed in vLLM, and fall back to
+GEMM kernel instead. As a result, GGUF models in vLLM are very slow with
+batched requests.
+
+I have updated GGUF GEMV kernel to support batched requests by doubling the
+number of thread blocks. This method differs from the original llama.cpp GEMV
+kernel but runs faster and is easier to implement.
+
+I also added some autotune configs to `triton_flash_attention.py` by increasing
+`num_stages`. In my test, gfx906 GPUs could benefit from this parameter.
+
+BTW, I saw `num_stages` is often set higher than 1 for NVIDIA GPUs, but not for
+AMD GPUs.
+
+
 2025-04-28:
 
 Update rocm to 6.3
 Update torch to 2.7.0
 Update triton to 3.3.0
+
 
 2025-04-22:
 
@@ -75,14 +97,15 @@ Optimized the GEMV kernel for GGUF q4_1 and q8_0 quantization, achieving
 NOTES
 -------------------
 
-GPTQ quantization is the only recommended quantization format to use.
+GPTQ quantization is the first recommended quantization format to use.
 
 GPTQ models with desc_act=True will produce bad response when using tensor
 parallelism. See:
 https://github.com/vllm-project/vllm/issues/7374
 
-GGUF quantization is functional but not recommended due to poor performance
-with batched requests.
+GGUF quantization is functional and should work. I recommend using q4_1 for
+best 4-bit single batch decode performance. K-quants (e.g. q4_K / q6_K) should
+work. I have not tested I-quants (e.g. IQ4 / IQ3) yet.
 
 If you are runing a unquantized bfloat16 model, add '--dtype float16' to the
 parameters for better performance.
