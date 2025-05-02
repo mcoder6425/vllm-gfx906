@@ -13,6 +13,16 @@ This modified version of vLLM does two things:
 NEWS
 -------------------
 
+2025-05-02:
+
+Update vLLM to 0.8.5
+
+Upstream vLLM 0.8.5 has lots of issues with ROCm platform, which have already
+been fixed in the main branch. I cherry-picked those fixes.
+
+I also fixed the issue of garbled output for GPTQ desc_act=True models.
+
+
 2025-04-29:
 
 I have fixed GGUF batched request performance issue. Now it's usable, but still
@@ -98,10 +108,6 @@ NOTES
 -------------------
 
 GPTQ quantization is the first recommended quantization format to use.
-
-GPTQ models with desc_act=True will produce bad response when using tensor
-parallelism. See:
-https://github.com/vllm-project/vllm/issues/7374
 
 GGUF quantization is functional and should work. I recommend using q4_1 for
 best 4-bit single batch decode performance. K-quants (e.g. q4_K / q6_K) should
