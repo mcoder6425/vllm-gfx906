@@ -613,6 +613,40 @@ def get_rdna_autotune_configs():
         'IS_ACTUAL_BLOCK_DMODEL', 'VARLEN', 'HQ', 'HK'
     ]
 
+def get_gfx906_autotune_configs():
+    return [
+
+        triton.Config(
+            {
+                "BLOCK_M": 16,
+                "BLOCK_N": 16,
+                "SHOULD_PRE_LOAD_V": False,
+                'GRID_CU_MULTIP': 2
+            },
+            num_stages=5,
+            num_warps=2),
+        triton.Config(
+            {
+                "BLOCK_M": 32,
+                "BLOCK_N": 32,
+                "SHOULD_PRE_LOAD_V": False,
+                'GRID_CU_MULTIP': 2
+            },
+            num_stages=3,
+            num_warps=4),
+        triton.Config(
+            {
+                "BLOCK_M": 16,
+                "BLOCK_N": 16,
+                "SHOULD_PRE_LOAD_V": False,
+                'GRID_CU_MULTIP': 2
+            },
+            num_stages=1,
+            num_warps=4),
+    ], [
+        'IS_CAUSAL', 'MAX_SEQLENS_Q', 'MAX_SEQLENS_K',
+        'IS_ACTUAL_BLOCK_DMODEL', 'VARLEN', 'HQ', 'HK'
+    ]
 
 def get_general_autotune_configs():
     return [
@@ -649,11 +683,18 @@ def get_general_autotune_configs():
     ]
 
 
+def has_gfx906_target():
+    ROCM_CDNA_TARGETS = ["gfx906"]
+    return triton.runtime.driver.active.get_current_target(
+    ).arch in ROCM_CDNA_TARGETS
+
 def has_cdna_target():
     ROCM_CDNA_TARGETS = ["gfx940", "gfx941", "gfx942", "gfx90a", "gfx908"]
     return triton.runtime.driver.active.get_current_target(
     ).arch in ROCM_CDNA_TARGETS
 
+def is_rocm_gfx906():
+    return current_platform.is_rocm() and has_gfx906_target()
 
 def is_rocm_cdna():
     return current_platform.is_rocm() and has_cdna_target()
@@ -662,6 +703,8 @@ def is_rocm_cdna():
 def get_autotune_configs():
     if is_rocm_cdna():
         return get_cdna_autotune_configs()
+    elif is_rocm_gfx906():
+        return get_gfx906_autotune_configs()
     elif current_platform.is_rocm():
         return get_rdna_autotune_configs()
     else:
