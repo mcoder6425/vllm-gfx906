@@ -644,7 +644,7 @@ def get_gfx906_autotune_configs():
             num_stages=1,
             num_warps=4),
     ], [
-        'IS_CAUSAL', 'MAX_SEQLENS_Q', 'MAX_SEQLENS_K',
+        'IS_CAUSAL',
         'IS_ACTUAL_BLOCK_DMODEL', 'VARLEN', 'HQ', 'HK'
     ]
 
