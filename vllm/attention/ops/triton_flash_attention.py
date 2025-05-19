@@ -25,11 +25,10 @@ Currently only the forward kernel is supported, and contains these features:
 from typing import Optional
 
 import torch
-import triton
-import triton.language as tl
 
 from vllm import _custom_ops as ops
 from vllm.platforms import current_platform
+from vllm.triton_utils import tl, triton
 
 SUPPORTED_LAYOUTS = ['thd', 'bhsd', 'bshd']
 
@@ -689,7 +688,7 @@ def has_gfx906_target():
     ).arch in ROCM_CDNA_TARGETS
 
 def has_cdna_target():
-    ROCM_CDNA_TARGETS = ["gfx940", "gfx941", "gfx942", "gfx90a", "gfx908"]
+    ROCM_CDNA_TARGETS = ["gfx942", "gfx90a", "gfx908"]
     return triton.runtime.driver.active.get_current_target(
     ).arch in ROCM_CDNA_TARGETS
 

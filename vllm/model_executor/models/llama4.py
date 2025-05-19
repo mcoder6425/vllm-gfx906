@@ -25,8 +25,7 @@ from transformers import Llama4TextConfig
 from vllm.attention import Attention
 from vllm.compilation.decorators import support_torch_compile
 from vllm.config import CacheConfig, VllmConfig
-from vllm.distributed import (get_tensor_model_parallel_world_size,
-                              tensor_model_parallel_all_reduce)
+from vllm.distributed import get_tensor_model_parallel_world_size
 from vllm.model_executor.layers.fused_moe import FusedMoE
 from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.linear import (QKVParallelLinear,
@@ -89,7 +88,7 @@ class Llama4MoE(nn.Module):
             quant_config=quant_config,
             bias=False,
             prefix=f"{prefix}.shared_expert",
-            reduce_results=False,  # We need to do scatter before reduce
+            reduce_results=self.experts.must_reduce_shared_expert_outputs(),
         )
 
     def forward(self, hidden_states):
@@ -102,7 +101,8 @@ class Llama4MoE(nn.Module):
         experts_out = routed_out + shared_out
 
         if self.tp_size > 1:
-            experts_out = tensor_model_parallel_all_reduce(experts_out)
+            experts_out = self.experts.maybe_all_reduce_tensor_model_parallel(
+                experts_out)
 
         return experts_out
 
@@ -273,8 +273,8 @@ class Llama4DecoderLayer(nn.Module):
             cache_config=cache_config,
             prefix=f"{prefix}.self_attn",
         )
-        is_moe_layer = (self.layer_idx +
-                        1) % config.interleave_moe_layer_step == 0
+        is_moe_layer = config.interleave_moe_layer_step > 0 and (
+            self.layer_idx + 1) % config.interleave_moe_layer_step == 0
         if is_moe_layer:
             self.feed_forward = Llama4MoE(
                 config=config,

@@ -6,7 +6,9 @@ import torch
 import torch.nn as nn
 from transformers import LlamaConfig
 
-from vllm.config import ModelConfig
+from vllm.compilation.decorators import support_torch_compile
+from vllm.config import VllmConfig
+from vllm.distributed.parallel_state import get_pp_group
 from vllm.logger import init_logger
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.vocab_parallel_embedding import (
@@ -37,23 +39,29 @@ class LlamaDecoderLayer(LlamaDecoderLayer):
             self.input_layernorm = nn.Identity()
 
 
+@support_torch_compile
 class LlamaModel(nn.Module):
 
     def __init__(
         self,
         *,
-        model_config: ModelConfig,
-        start_layer_id: int = 0,
+        vllm_config: VllmConfig,
         prefix: str = "",
+        start_layer_id: int = 0,
     ) -> None:
         super().__init__()
-        self.config = model_config.hf_config
+        self.config = vllm_config. \
+            speculative_config.draft_model_config.hf_config
         self.vocab_size = self.config.vocab_size
-        self.embed_tokens = VocabParallelEmbedding(
-            self.config.vocab_size,
-            self.config.hidden_size,
-            prefix=maybe_prefix(prefix, "embed_tokens"),
-        )
+
+        # if PP disabled then draft will share embed with target
+        if get_pp_group().world_size > 1:
+            self.embed_tokens = VocabParallelEmbedding(
+                self.config.vocab_size,
+                self.config.hidden_size,
+                prefix=maybe_prefix(prefix, "embed_tokens"),
+            )
+
         self.layers = nn.ModuleList([
             LlamaDecoderLayer(
                 self.config,
@@ -75,8 +83,7 @@ class LlamaModel(nn.Module):
         hidden_states = self.fc(
             torch.cat((input_embeds, hidden_states), dim=-1))
         residual = None
-        for i in range(len(self.layers)):
-            layer = self.layers[i]
+        for layer in self.layers:
             hidden_states, residual = layer(
                 positions,
                 hidden_states,
@@ -107,6 +114,12 @@ class LlamaModel(nn.Module):
                 weight_loader(param, loaded_weight, shard_id)
                 break
             else:
+
+                # if PP disabled then draft will share embed with target
+                if get_pp_group().world_size == 1 and \
+                    "embed_tokens." in name:
+                    continue
+
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
@@ -117,12 +130,13 @@ class LlamaModel(nn.Module):
 
 class EagleLlamaForCausalLM(LlamaForCausalLM):
 
-    def __init__(self, *, model_config: ModelConfig, start_layer_id: int = 0):
+    def __init__(self, *, vllm_config: VllmConfig, start_layer_id: int = 0):
         nn.Module.__init__(self)
-        self.config = model_config.hf_config
-        self.model = LlamaModel(model_config=model_config,
-                                start_layer_id=start_layer_id,
-                                prefix="model")
+        self.config = vllm_config. \
+            speculative_config.draft_model_config.hf_config
+        self.model = LlamaModel(vllm_config=vllm_config,
+                                prefix="model",
+                                start_layer_id=start_layer_id)
 
         logit_scale = getattr(self.config, "logit_scale", 1.0)
         self.logits_processor = LogitsProcessor(self.config.vocab_size,
@@ -139,8 +153,7 @@ class EagleLlamaForCausalLM(LlamaForCausalLM):
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         loader = AutoWeightsLoader(
             self,
-            skip_prefixes=(["lm_head."]
-                           if self.config.tie_word_embeddings else None),
+            skip_prefixes=None,
         )
 
         model_weights = {}
@@ -148,5 +161,4 @@ class EagleLlamaForCausalLM(LlamaForCausalLM):
             if "lm_head" not in name:
                 name = "model." + name
             model_weights[name] = loaded_weight
-
-        loader.load_weights(model_weights.items())
+        return loader.load_weights(model_weights.items())
