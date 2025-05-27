@@ -614,25 +614,15 @@ def get_rdna_autotune_configs():
 
 def get_gfx906_autotune_configs():
     return [
-
         triton.Config(
             {
-                "BLOCK_M": 16,
+                "BLOCK_M": 32,
                 "BLOCK_N": 16,
                 "SHOULD_PRE_LOAD_V": False,
                 'GRID_CU_MULTIP': 2
             },
-            num_stages=5,
+            num_stages=1,
             num_warps=2),
-        triton.Config(
-            {
-                "BLOCK_M": 32,
-                "BLOCK_N": 32,
-                "SHOULD_PRE_LOAD_V": False,
-                'GRID_CU_MULTIP': 2
-            },
-            num_stages=3,
-            num_warps=4),
         triton.Config(
             {
                 "BLOCK_M": 16,
@@ -641,7 +631,7 @@ def get_gfx906_autotune_configs():
                 'GRID_CU_MULTIP': 2
             },
             num_stages=1,
-            num_warps=4),
+            num_warps=2),
     ], [
         'IS_CAUSAL',
         'IS_ACTUAL_BLOCK_DMODEL', 'VARLEN', 'HQ', 'HK'
