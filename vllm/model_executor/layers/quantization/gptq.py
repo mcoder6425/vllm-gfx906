@@ -20,7 +20,10 @@ from vllm.model_executor.parameter import (ChannelQuantScaleParameter,
                                            PackedColumnParameter,
                                            PackedvLLMParameter,
                                            RowvLLMParameter)
+from vllm.logger import init_logger
 
+
+logger = init_logger(__name__)
 
 class GPTQConfig(QuantizationConfig):
     """Config class for GPTQ.
@@ -168,6 +171,11 @@ class GPTQLinearMethod(LinearMethodBase):
             # For act-order models, we cannot use Exllama for row parallel layer
             if self.quant_config.desc_act:
                 exllama_state = ExllamaState.UNUSED
+                logger.warning_once(
+                    "[vllm-gfx906] You are using tensor parallel with a "
+                    "desc_act GPTQ model. vLLM will use an alternative kernel "
+                    "to handle and this could be very slow. Strongly recommend"
+                    " to use pipeline parallel instead.")
             else:
                 # we need to partition qzeros and scales for exllama kernel
                 scale_and_zero_size = input_size_per_partition // group_size

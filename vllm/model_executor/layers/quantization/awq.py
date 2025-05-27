@@ -13,6 +13,10 @@ from vllm.model_executor.layers.quantization.base_config import (
     QuantizationConfig)
 from vllm.model_executor.parameter import (GroupQuantScaleParameter,
                                            PackedvLLMParameter)
+from vllm.logger import init_logger
+
+
+logger = init_logger(__name__)
 
 AWQ_ORDER = [0, 2, 4, 6, 1, 3, 5, 7]
 AWQ_REVERSE_ORDER = [0, 4, 1, 5, 2, 6, 3, 7]
@@ -117,6 +121,9 @@ class AWQConfig(QuantizationConfig):
                 "Currently, only 4-bit weight quantization is supported for "
                 f"AWQ, but got {self.weight_bits} bits.")
         self.pack_factor = 32 // self.weight_bits
+
+        logger.info("[vllm-gfx906] You are using AWQ with exllama kernel, "
+                    "this is differ from the offical vLLM.")
 
     def __repr__(self) -> str:
         return (f"AWQConfig(weight_bits={self.weight_bits}, "
