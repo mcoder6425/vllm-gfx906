@@ -10,6 +10,35 @@ This modified version of vLLM does two things:
 2. Optimizes quantization GEMV kernels for gfx906 GPUs.
 
 
+RUN WITH DOCKER
+-------------------
+
+Please install ROCm 6.3 first, only kernel-mode driver is requred. Refer to the
+official documentation by AMD.
+
+```
+docker pull nalanzeyu/vllm-gfx906
+docker run -it --rm --shm-size=2g --device=/dev/kfd --device=/dev/dri \
+    --group-add video -p 8000:8000 -v <YOUR_MODEL_PATH>:/model \
+    nalanzeyu/vllm-gfx906 vllm serve /model
+```
+
+
+NOTES
+-------------------
+
+GPTQ and AWQ are the first recommended quantization formats.
+
+GGUF is functional and should work. I recommend using q4_1 or q8_0 quants.
+K-quants (e.g. q4_K / q6_K) should work. I-quants (e.g. IQ4 / IQ3) have not
+tested yet.
+
+If you are runing a unquantized bfloat16 model, add '--dtype float16' to the
+parameters for better performance.
+
+Any MoE models with quantization are not expecting to work.
+
+
 NEWS
 -------------------
 
@@ -36,20 +65,8 @@ I also fixed the issue of garbled output for GPTQ desc_act=True models.
 I have fixed GGUF batched request performance issue. Now it's usable, but still
 not as fast as GPTQ.
 
-In origin llama.cpp GEMV kernel, there are some optimizations for batched
-requests, but those optimizations have been removed in vLLM, and fall back to
-GEMM kernel instead. As a result, GGUF models in vLLM are very slow with
-batched requests.
-
-I have updated GGUF GEMV kernel to support batched requests by doubling the
-number of thread blocks. This method differs from the original llama.cpp GEMV
-kernel but runs faster and is easier to implement.
-
 I also added some autotune configs to `triton_flash_attention.py` by increasing
-`num_stages`. In my test, gfx906 GPUs could benefit from this parameter.
-
-BTW, I saw `num_stages` is often set higher than 1 for NVIDIA GPUs, but not for
-AMD GPUs.
+`num_stages`.
 
 
 2025-04-28:
@@ -74,36 +91,14 @@ Update vLLM to v0.8.4
 
 2025-04-20:
 
-The reason behind Qwen2 GPTQ models outputting infinite "!!!!!!!!!!!!!!!!!!!"
-has been identified. For detailes, see:
-https://modelscope.cn/models/tclf90/qwq-32b-gptq-int4
-
-In short: This is not an issue with model file itself. When the input prompt
-is too short, the computation for prefill is more like GEMV then GEMM, vLLM uses
-a different CUDA kernel to compute, which has some issues with prefill workround.
-
-There are two workarounds:
-1. Prepend some junk data to the prompt to make it longer.
-2. Adjust the threshold for distinguishing between GEMM and GEMV.
-
-In the original post, the author recommends changing the threshold to 0.
-However, this significantly hurts performance on gfx906 GPUs. I changed the
-threshold from 50 (for 4-bit) / 24 (for 8-bit) to 8/8. I tested several models
-with very short inputs, and it worked fine without any noticeable performance
-difference (when the number of concurrent requests is ≤ 8).
+I changed the reconstruct threshold in GPTQ GEMM kernel. This is a temporary
+fix for Qwen2 GPTQ models outputting infinite "!!!!!!!!!!!!!!!!!!!"
 
 
 2025-04-19:
 
 I attempted to optimize AWQ, by adding '@triton.autotune' to triton_awq.py.
 This improved performance by about 50%, but it's still very slow on gfx906 GPUs.
-
-I also tried on an NVIDIA Turing GPU. The origin awq_triton.py is slow on
-Turing too, but this autotune technique improves it's performance to match the
-default AWQ CUDA implementation.
-
-This is somewhat ironic: I was optimizing awq_triton.py for AMD's GPU but
-failed to make it usable, yet I made NVIDIA's GPU usable first.
 
 
 2025-04-01:
@@ -112,23 +107,11 @@ Optimized the GEMV kernel for GGUF q4_1 and q8_0 quantization, achieving
 10%~20% performance improve.
 
 
-NOTES
+BUILD
 -------------------
 
-GPTQ and AWQ quantizations is the first recommended quantization format to use.
-
-GGUF quantization is functional and should work. I recommend using q4_1 for
-best 4-bit single batch decode performance. K-quants (e.g. q4_K / q6_K) should
-work. I have not tested I-quants (e.g. IQ4 / IQ3) yet.
-
-If you are runing a unquantized bfloat16 model, add '--dtype float16' to the
-parameters for better performance.
-
-
-INSTALL
--------------------
-
-Please install ROCm 6.3 first. Refer to the official documentation by AMD.
+Please install ROCm 6.3 first. You need to install both kernel-mode driver and
+ROCm packages. Refer to the official documentation by AMD.
 
 You MUST INSTALL triton-gfx906 v3.3.0+gfx906 first, see:
 https://github.com/nlzy/triton-gfx906/tree/v3.3.0+gfx906
