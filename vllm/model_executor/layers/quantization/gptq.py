@@ -271,6 +271,7 @@ class GPTQLinearMethod(LinearMethodBase):
         output = ops.gptq_gemm(reshaped_x, layer.qweight, layer.qzeros,
                                layer.scales, layer.g_idx,
                                layer.exllama_state == ExllamaState.READY,
+                               True,
                                self.quant_config.weight_bits)
         if bias is not None:
             output.add_(bias)

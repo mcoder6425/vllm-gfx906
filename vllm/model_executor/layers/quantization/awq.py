@@ -3,6 +3,7 @@
 from typing import Any, Optional
 
 import torch
+from torch.nn.parameter import Parameter
 
 from vllm import _custom_ops as ops
 from vllm.model_executor.layers.linear import (LinearBase, LinearMethodBase,
@@ -12,6 +13,84 @@ from vllm.model_executor.layers.quantization.base_config import (
     QuantizationConfig)
 from vllm.model_executor.parameter import (GroupQuantScaleParameter,
                                            PackedvLLMParameter)
+
+AWQ_ORDER = [0, 2, 4, 6, 1, 3, 5, 7]
+AWQ_REVERSE_ORDER = [0, 4, 1, 5, 2, 6, 3, 7]
+
+def unpack_awq(qweight: torch.Tensor, qzeros: torch.Tensor, bits: int):
+    shifts = torch.arange(0, 32, bits, device=qzeros.device)
+
+    # unpacking columnwise
+    iweights = torch.bitwise_right_shift(qweight[:, :, None], shifts[None, None, :]).to(
+        torch.int8  # smallest dtype available
+    )
+    iweights = iweights.view(iweights.shape[0], -1)
+
+    # unpacking columnwise
+    if qzeros is not None:
+        izeros = torch.bitwise_right_shift(qzeros[:, :, None], shifts[None, None, :]).to(
+            torch.int8  # smallest dtype available
+        )
+        izeros = izeros.view(izeros.shape[0], -1)
+    else:
+        izeros = qzeros
+
+    return iweights, izeros
+
+
+def reverse_awq_order(iweights: torch.Tensor, izeros: torch.Tensor, bits: int):
+    reverse_order_tensor = torch.arange(
+        iweights.shape[-1],
+        dtype=torch.int32,
+        device=izeros.device,
+    )
+    reverse_order_tensor = reverse_order_tensor.view(-1, 32 // bits)
+    reverse_order_tensor = reverse_order_tensor[:, AWQ_REVERSE_ORDER]
+    reverse_order_tensor = reverse_order_tensor.view(-1)
+
+    if izeros is not None:
+        izeros = izeros[:, reverse_order_tensor]
+    iweights = iweights[:, reverse_order_tensor]
+
+    return iweights, izeros
+
+
+def pack_exllama(iweights: torch.Tensor, izeros: torch.Tensor, bits: int):
+    shifts = torch.arange(0, 32, bits, device=iweights.device)
+
+    # packing rowwise
+    iweights = iweights.view(iweights.shape[0] // (32 // bits), 32 // bits, -1)
+    qweight = (
+        torch.bitwise_left_shift(iweights, shifts[None, :, None])
+        .sum(dim=1)
+        .to(torch.int32)
+    )
+
+    # packing columnwise
+    izeros = izeros.view(-1, izeros.shape[1] // (32 // bits), 32 // bits)
+    qzeros = (
+        torch.bitwise_left_shift(izeros, shifts[None, None, :])
+        .sum(dim=-1)
+        .to(torch.int32)
+    )
+
+    return qweight, qzeros
+
+
+def unpack_reorder_pack(qweight, qzeros, bits):
+    # Unpack the qweight and qzeros tensors
+    iweight, izeros = unpack_awq(qweight, qzeros, bits)
+    # Reverse the order of the iweight and izeros tensors
+    iweight, izeros = reverse_awq_order(iweight, izeros, bits)
+
+    # overflow checks
+    iweight = torch.bitwise_and(iweight, (2**bits) - 1)
+    izeros = torch.bitwise_and(izeros, (2**bits) - 1)
+
+    # Pack the qweight and qzeros tensors
+    qweight, qzeros = pack_exllama(iweight, izeros, bits)
+
+    return qweight, qzeros
 
 
 class AWQConfig(QuantizationConfig):
@@ -53,8 +132,7 @@ class AWQConfig(QuantizationConfig):
 
     @classmethod
     def get_min_capability(cls) -> int:
-        # The AWQ kernel only supports Turing or newer GPUs.
-        return 75
+        return 60
 
     @staticmethod
     def get_config_filenames() -> list[str]:
@@ -139,47 +217,47 @@ class AWQLinearMethod(LinearMethodBase):
             packed_factor=self.quant_config.pack_factor,
             weight_loader=weight_loader)
 
-        scales = GroupQuantScaleParameter(data=torch.empty(
-            input_size_per_partition // self.quant_config.group_size,
-            output_size_per_partition,
-            dtype=params_dtype,
-        ),
-                                          input_dim=0,
-                                          output_dim=1,
-                                          weight_loader=weight_loader)
+        scales = GroupQuantScaleParameter(
+            data=torch.empty(
+                input_size_per_partition // self.quant_config.group_size,
+                output_size_per_partition,
+                dtype=params_dtype,
+            ),
+            input_dim=0,
+            output_dim=1,
+            weight_loader=weight_loader)
 
         layer.register_parameter("qweight", qweight)
         layer.register_parameter("qzeros", qzeros)
         layer.register_parameter("scales", scales)
 
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
-        layer.qweight = torch.nn.Parameter(layer.qweight.data,
-                                           requires_grad=False)
-        layer.qzeros = torch.nn.Parameter(layer.qzeros.data,
-                                          requires_grad=False)
-        layer.scales = torch.nn.Parameter(layer.scales.data,
-                                          requires_grad=False)
+        qweight, qzeros = unpack_reorder_pack(
+            layer.qweight.data, layer.qzeros.data,
+            self.quant_config.weight_bits
+        )
+        scales = layer.scales.data
+
+        layer.qweight = Parameter(qweight, requires_grad=False)
+        layer.qzeros = Parameter(qzeros, requires_grad=False)
+        layer.scales = Parameter(scales, requires_grad=False)
+
+        ops.gptq_shuffle(layer.qweight,
+                         torch.empty(0, device=layer.qweight.device),
+                         self.quant_config.weight_bits)
 
     def apply(self,
               layer: torch.nn.Module,
               x: torch.Tensor,
               bias: Optional[torch.Tensor] = None) -> torch.Tensor:
-        qweight = layer.qweight
-        scales = layer.scales
-        qzeros = layer.qzeros
-        pack_factor = self.quant_config.pack_factor
-        out_shape = (x.shape[:-1] + (qweight.shape[-1] * pack_factor, ))
+        out_shape = x.shape[:-1] + (layer.qweight.shape[-1], )
         reshaped_x = x.reshape(-1, x.shape[-1])
 
-        # num_tokens >= threshold
-        FP16_MATMUL_HEURISTIC_CONDITION = x.shape[:-1].numel() >= 256
-
-        if FP16_MATMUL_HEURISTIC_CONDITION:
-            out = ops.awq_dequantize(qweight, scales, qzeros, 0, 0, 0)
-            out = torch.matmul(reshaped_x, out)
-        else:
-            out = ops.awq_gemm(reshaped_x, qweight, scales, qzeros,
-                               pack_factor)
+        output = ops.gptq_gemm(
+            reshaped_x, layer.qweight, layer.qzeros, layer.scales,
+            torch.empty(0, device=layer.qweight.device),
+            True, False, self.quant_config.weight_bits
+        )
         if bias is not None:
-            out.add_(bias)
-        return out.reshape(out_shape)
+            output.add_(bias)
+        return output.reshape(out_shape)

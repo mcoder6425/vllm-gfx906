@@ -134,7 +134,7 @@ class ExllamaLinearKernel(MPLinearKernel):
 
         assert w_zp is not None, "Zero points are required by Exllama"
         assert w_g_idx is not None, "Group index is required by Exllama"
-        output = ops.gptq_gemm(x_2d, w_q, w_zp, w_s, w_g_idx, True,
+        output = ops.gptq_gemm(x_2d, w_q, w_zp, w_s, w_g_idx, True, True,
                                c.weight_type.size_bits)
 
         if bias is not None:

@@ -358,10 +358,10 @@ def awq_gemm(input: torch.Tensor, qweight: torch.Tensor, qzeros: torch.Tensor,
 # gptq
 def gptq_gemm(a: torch.Tensor, b_q_weight: torch.Tensor,
               b_gptq_qzeros: torch.Tensor, b_gptq_scales: torch.Tensor,
-              b_g_idx: torch.Tensor, use_exllama: bool,
+              b_g_idx: torch.Tensor, use_exllama: bool, bias_one: bool,
               bit: int) -> torch.Tensor:
     return torch.ops._C.gptq_gemm(a, b_q_weight, b_gptq_qzeros, b_gptq_scales,
-                                  b_g_idx, use_exllama, bit)
+                                  b_g_idx, use_exllama, bias_one, bit)
 
 
 if hasattr(torch.ops._C, "gptq_gemm"):
@@ -370,7 +370,8 @@ if hasattr(torch.ops._C, "gptq_gemm"):
     def _gptq_gemm_fake(a: torch.Tensor, b_q_weight: torch.Tensor,
                         b_gptq_qzeros: torch.Tensor,
                         b_gptq_scales: torch.Tensor, b_g_idx: torch.Tensor,
-                        use_exllama: bool, bit: int) -> torch.Tensor:
+                        use_exllama: bool, bias_one: bool,
+                        bit: int) -> torch.Tensor:
         return torch.empty((a.size(0), b_q_weight.size(1)),
                            dtype=a.dtype,
                            device=a.device)

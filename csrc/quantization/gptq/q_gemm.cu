@@ -89,7 +89,7 @@ typedef void (*fp_gemm_half_q_half_gptq_kernel)(const half*, const uint32_t*,
                                                 const int, const int,
                                                 const int*);
 
-template <bool first_block, int m_count>
+template <bool first_block, int m_count, bool bias_one>
 __global__ void gemm_half_q_half_gptq_4bit_kernel(
     const half* __restrict__ a, const uint32_t* __restrict__ b_q_weight,
     const uint32_t* __restrict__ b_gptq_qzeros,
@@ -153,6 +153,8 @@ __global__ void gemm_half_q_half_gptq_4bit_kernel(
   const half* a_ptr = &block_a[0][0];
   int a_stride = BLOCK_KN_SIZE;
 
+  constexpr int bias_value = bias_one ? 1 : 0;
+
   // Initial group
   int zeros[4];
   float scales[4];
@@ -160,10 +162,10 @@ __global__ void gemm_half_q_half_gptq_4bit_kernel(
   half2 y1y16[4][2];
   b_gptq_qzeros_.item4(zeros, group, n);
   b_gptq_scales_.item4_f(scales, group, n);
-  dequant_4bit_8_prep_zero(zeros[0] + 1, z1z16[0], y1y16[0]);
-  dequant_4bit_8_prep_zero(zeros[1] + 1, z1z16[1], y1y16[1]);
-  dequant_4bit_8_prep_zero(zeros[2] + 1, z1z16[2], y1y16[2]);
-  dequant_4bit_8_prep_zero(zeros[3] + 1, z1z16[3], y1y16[3]);
+  dequant_4bit_8_prep_zero(zeros[0] + bias_value, z1z16[0], y1y16[0]);
+  dequant_4bit_8_prep_zero(zeros[1] + bias_value, z1z16[1], y1y16[1]);
+  dequant_4bit_8_prep_zero(zeros[2] + bias_value, z1z16[2], y1y16[2]);
+  dequant_4bit_8_prep_zero(zeros[3] + bias_value, z1z16[3], y1y16[3]);
 
   // Column result
   float block_c[m_count][4] = {};
@@ -176,10 +178,10 @@ __global__ void gemm_half_q_half_gptq_4bit_kernel(
       nextgroup += groupsize;
       b_gptq_qzeros_.item4(zeros, group, n);
       b_gptq_scales_.item4_f(scales, group, n);
-      dequant_4bit_8_prep_zero(zeros[0] + 1, z1z16[0], y1y16[0]);
-      dequant_4bit_8_prep_zero(zeros[1] + 1, z1z16[1], y1y16[1]);
-      dequant_4bit_8_prep_zero(zeros[2] + 1, z1z16[2], y1y16[2]);
-      dequant_4bit_8_prep_zero(zeros[3] + 1, z1z16[3], y1y16[3]);
+      dequant_4bit_8_prep_zero(zeros[0] + bias_value, z1z16[0], y1y16[0]);
+      dequant_4bit_8_prep_zero(zeros[1] + bias_value, z1z16[1], y1y16[1]);
+      dequant_4bit_8_prep_zero(zeros[2] + bias_value, z1z16[2], y1y16[2]);
+      dequant_4bit_8_prep_zero(zeros[3] + bias_value, z1z16[3], y1y16[3]);
     }
 
 #pragma unroll
@@ -610,13 +612,17 @@ __global__ void gemm_half_q_half_gptq_8bit_kernel(
 }
 
 fp_gemm_half_q_half_gptq_kernel pick_gemm_half_q_half_gptq_kernel(
-    bool first_block, const int m_count, const int bit) {
+    bool first_block, const int m_count, bool bias_one, const int bit) {
 #define SELECT_KERNEL(M_COUNT)                                             \
   if (m_count == M_COUNT) {                                                \
     if (bit == 2) return gemm_half_q_half_gptq_2bit_kernel<true, M_COUNT>; \
     if (bit == 3) return gemm_half_q_half_gptq_3bit_kernel<true, M_COUNT>; \
-    if (bit == 4) return gemm_half_q_half_gptq_4bit_kernel<true, M_COUNT>; \
     if (bit == 8) return gemm_half_q_half_gptq_8bit_kernel<true, M_COUNT>; \
+    if (bit == 4)                                                          \
+      if (bias_one)                                                        \
+        return gemm_half_q_half_gptq_4bit_kernel<true, M_COUNT, true>;     \
+      else                                                                 \
+        return gemm_half_q_half_gptq_4bit_kernel<true, M_COUNT, false>;    \
   }
 #if BLOCK_M_SIZE_MAX >= 1
   SELECT_KERNEL(1);
@@ -649,7 +655,8 @@ void gemm_half_q_half_cuda_part(const half* a, const uint32_t* b_q_weight,
                                 const uint32_t* b_gptq_qzeros,
                                 const half* b_gptq_scales, const int* b_q_perm,
                                 half* c, int size_m, int size_n, int size_k,
-                                int m_count, int groups, int bit) {
+                                int m_count, int groups, bool bias_one,
+                                int bit) {
   dim3 blockDim, gridDim;
   blockDim.x = BLOCK_KN_SIZE;
   blockDim.y = 1;
@@ -659,7 +666,7 @@ void gemm_half_q_half_cuda_part(const half* a, const uint32_t* b_q_weight,
   gridDim.z = DIVIDE(size_k, BLOCK_KN_SIZE);
 
   fp_gemm_half_q_half_gptq_kernel kernel =
-      pick_gemm_half_q_half_gptq_kernel(true, m_count, bit);
+      pick_gemm_half_q_half_gptq_kernel(true, m_count, bias_one, bit);
 
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   kernel<<<gridDim, blockDim, 0, stream>>>(a, b_q_weight, b_gptq_qzeros,
@@ -764,6 +771,7 @@ __global__ void reconstruct_exllama_8bit_kernel(
   }
 }
 
+template <bool bias_one>
 __global__ void reconstruct_exllama_4bit_kernel(
     const uint32_t* __restrict__ b_q_weight, const int* __restrict__ b_q_perm,
     const uint32_t* __restrict__ b_gptq_qzeros,
@@ -800,6 +808,8 @@ __global__ void reconstruct_exllama_4bit_kernel(
 
   const uint32_t* b_ptr = b_q_weight + qk * size_n + n;
 
+  constexpr int bias_value = bias_one ? 1 : 0;
+
   // Initial zeros/scale
   int zeros[4];
   half2 scales[4];
@@ -807,10 +817,10 @@ __global__ void reconstruct_exllama_4bit_kernel(
   half2 y1y16[4][2];
   b_gptq_qzeros_.item4(zeros, group, n);
   b_gptq_scales_.item4_h2(scales, group, n);
-  dequant_4bit_8_prep_zero(zeros[0] + 1, z1z16[0], y1y16[0]);
-  dequant_4bit_8_prep_zero(zeros[1] + 1, z1z16[1], y1y16[1]);
-  dequant_4bit_8_prep_zero(zeros[2] + 1, z1z16[2], y1y16[2]);
-  dequant_4bit_8_prep_zero(zeros[3] + 1, z1z16[3], y1y16[3]);
+  dequant_4bit_8_prep_zero(zeros[0] + bias_value, z1z16[0], y1y16[0]);
+  dequant_4bit_8_prep_zero(zeros[1] + bias_value, z1z16[1], y1y16[1]);
+  dequant_4bit_8_prep_zero(zeros[2] + bias_value, z1z16[2], y1y16[2]);
+  dequant_4bit_8_prep_zero(zeros[3] + bias_value, z1z16[3], y1y16[3]);
 
   __syncthreads();
 
@@ -823,10 +833,10 @@ __global__ void reconstruct_exllama_4bit_kernel(
       nextgroup += groupsize;
       b_gptq_qzeros_.item4(zeros, group, n);
       b_gptq_scales_.item4_h2(scales, group, n);
-      dequant_4bit_8_prep_zero(zeros[0] + 1, z1z16[0], y1y16[0]);
-      dequant_4bit_8_prep_zero(zeros[1] + 1, z1z16[1], y1y16[1]);
-      dequant_4bit_8_prep_zero(zeros[2] + 1, z1z16[2], y1y16[2]);
-      dequant_4bit_8_prep_zero(zeros[3] + 1, z1z16[3], y1y16[3]);
+      dequant_4bit_8_prep_zero(zeros[0] + bias_value, z1z16[0], y1y16[0]);
+      dequant_4bit_8_prep_zero(zeros[1] + bias_value, z1z16[1], y1y16[1]);
+      dequant_4bit_8_prep_zero(zeros[2] + bias_value, z1z16[2], y1y16[2]);
+      dequant_4bit_8_prep_zero(zeros[3] + bias_value, z1z16[3], y1y16[3]);
     }
 
     for (int p = 0; p < 4; p++) {
@@ -1062,20 +1072,23 @@ void reconstruct_exllama(const uint32_t* b_q_weight,
                          const uint32_t* b_gptq_qzeros,
                          const half* b_gptq_scales, const int* b_q_perm,
                          half* out, int height, int width, int groups,
-                         int bit) {
+                         bool bias_one, int bit) {
   dim3 blockDim, gridDim;
   blockDim.x = BLOCK_KN_SIZE;
   blockDim.y = 1;
   gridDim.y = DIVIDE(height, BLOCK_KN_SIZE);
   gridDim.x = DIVIDE(width, BLOCK_KN_SIZE);
 
-  auto reconstruct_exllama_kernel = reconstruct_exllama_4bit_kernel;
+  auto reconstruct_exllama_kernel = reconstruct_exllama_8bit_kernel;
   if (bit == 2) {
     reconstruct_exllama_kernel = reconstruct_exllama_2bit_kernel;
   } else if (bit == 3) {
     reconstruct_exllama_kernel = reconstruct_exllama_3bit_kernel;
-  } else if (bit == 8) {
-    reconstruct_exllama_kernel = reconstruct_exllama_8bit_kernel;
+  } else if (bit == 4) {
+    if (bias_one)
+      reconstruct_exllama_kernel = reconstruct_exllama_4bit_kernel<true>;
+    else
+      reconstruct_exllama_kernel = reconstruct_exllama_4bit_kernel<false>;
   }
 
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
@@ -1381,7 +1394,8 @@ void gemm_half_q_half_cuda(cublasHandle_t cublas_handle, const half* a,
                            const uint32_t* b_gptq_qzeros,
                            const half* b_gptq_scales, const int* b_g_idx,
                            half* c, half* temp_dq, int size_m, int size_n,
-                           int size_k, int groups, bool use_exllama, int bit) {
+                           int size_k, int groups, bool use_exllama,
+                           bool bias_one, int bit) {
   bool use_reconstruct;
   if (use_exllama) {
     use_reconstruct = ((bit == 8 && size_m > MAX_Q_GEMM_ROWS_8BIT) ||
@@ -1395,7 +1409,7 @@ void gemm_half_q_half_cuda(cublasHandle_t cublas_handle, const half* a,
     // Reconstruct FP16 matrix, then cuBLAS
     if (use_exllama) {
       reconstruct_exllama(b_q_weight, b_gptq_qzeros, b_gptq_scales, b_g_idx,
-                          temp_dq, size_k, size_n, groups, bit);
+                          temp_dq, size_k, size_n, groups, bias_one, bit);
     } else {
       reconstruct_gptq(b_q_weight, b_gptq_qzeros, b_gptq_scales, b_g_idx,
                        temp_dq, size_k, size_n, groups, bit);
@@ -1414,14 +1428,15 @@ void gemm_half_q_half_cuda(cublasHandle_t cublas_handle, const half* a,
     if (max_chunks) {
       gemm_half_q_half_cuda_part(a, b_q_weight, b_gptq_qzeros, b_gptq_scales,
                                  b_g_idx, c, last_chunk, size_n, size_k,
-                                 BLOCK_M_SIZE_MAX, groups, bit);
+                                 BLOCK_M_SIZE_MAX, groups, bias_one, bit);
     }
 
     if (last_chunk_size) {
       gemm_half_q_half_cuda_part(a + last_chunk * size_k, b_q_weight,
                                  b_gptq_qzeros, b_gptq_scales, b_g_idx,
                                  c + last_chunk * size_n, last_chunk_size,
-                                 size_n, size_k, last_chunk_size, groups, bit);
+                                 size_n, size_k, last_chunk_size, groups,
+                                 bias_one, bit);
     }
   } else {
     gemm_half_q_half_alt(a, b_q_weight, b_gptq_qzeros, b_gptq_scales, b_g_idx,
@@ -1712,25 +1727,34 @@ void shuffle_exllama_weight(uint32_t* q_weight, int* q_perm, int height,
 torch::Tensor gptq_gemm(torch::Tensor a, torch::Tensor b_q_weight,
                         torch::Tensor b_gptq_qzeros,
                         torch::Tensor b_gptq_scales, torch::Tensor b_g_idx,
-                        bool use_exllama, int64_t bit) {
+                        bool use_exllama, bool bias_one, int64_t bit) {
   const at::cuda::OptionalCUDAGuard device_guard(device_of(a));
   auto options = torch::TensorOptions().dtype(a.dtype()).device(a.device());
   at::Tensor c = torch::empty({a.size(0), b_q_weight.size(1)}, options);
   at::Tensor temp_dq = torch::empty(
       {b_q_weight.size(0) * 32 / bit, b_q_weight.size(1)}, options);
 
+  if (!bias_one) {
+    // GPTQ checkpoint format should call this function with bias_one=true
+    // and AWQ should be false
+    TORCH_CHECK(use_exllama, "GPTQ ALT kernel don't support AWQ check-point"
+                             "format, use exllama kernel instead");
+    TORCH_CHECK(bit == 4, "Only support 4-bit quantize of AWQ");
+  }
+
   vllm::gptq::gemm_half_q_half_cuda(
       at::cuda::getCurrentCUDABlasHandle(), (const half*)a.data_ptr(),
       (const uint32_t*)b_q_weight.data_ptr(),
       (const uint32_t*)b_gptq_qzeros.data_ptr(),
       (const half*)b_gptq_scales.data_ptr(),
-      b_g_idx.device().is_meta() ? NULL : (const int*)b_g_idx.data_ptr(),
+      b_g_idx.device().is_meta() || b_g_idx.numel() == 0
+        ? NULL : (const int*)b_g_idx.data_ptr(),
       (half*)c.data_ptr(), (half*)temp_dq.data_ptr(),
       c.size(0),              // m
       c.size(1),              // n
       a.size(1),              // k
       b_gptq_qzeros.size(0),  // group number
-      use_exllama, bit);
+      use_exllama, bias_one, bit);
   return c;
 }
 

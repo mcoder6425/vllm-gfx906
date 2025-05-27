@@ -302,11 +302,6 @@ class RocmPlatform(Platform):
     @classmethod
     def verify_quantization(cls, quant: str) -> None:
         super().verify_quantization(quant)
-        if quant == "awq" and not envs.VLLM_USE_TRITON_AWQ:
-            logger.warning(
-                "Using AWQ quantization with ROCm, but VLLM_USE_TRITON_AWQ"
-                " is not set, enabling VLLM_USE_TRITON_AWQ.")
-        envs.VLLM_USE_TRITON_AWQ = True
 
     @classmethod
     def get_punica_wrapper(cls) -> str:
