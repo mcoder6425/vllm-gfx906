@@ -13,6 +13,14 @@ This modified version of vLLM does two things:
 NEWS
 -------------------
 
+2025-05-27:
+
+Add support for AWQ quantization on gfx906 without triton, use the same kernel
+with GPTQ, so the performance of AWQ should be on par with GPTQ.
+
+Update vLLM to 0.9.0
+
+
 2025-05-02:
 
 Update vLLM to 0.8.5
@@ -107,7 +115,7 @@ Optimized the GEMV kernel for GGUF q4_1 and q8_0 quantization, achieving
 NOTES
 -------------------
 
-GPTQ quantization is the first recommended quantization format to use.
+GPTQ and AWQ quantizations is the first recommended quantization format to use.
 
 GGUF quantization is functional and should work. I recommend using q4_1 for
 best 4-bit single batch decode performance. K-quants (e.g. q4_K / q6_K) should
@@ -119,6 +127,8 @@ parameters for better performance.
 
 INSTALL
 -------------------
+
+Please install ROCm 6.3 first. Refer to the official documentation by AMD.
 
 You MUST INSTALL triton-gfx906 v3.3.0+gfx906 first, see:
 https://github.com/nlzy/triton-gfx906/tree/v3.3.0+gfx906
