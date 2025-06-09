@@ -90,6 +90,7 @@ typedef void (*fp_gemm_half_q_half_gptq_kernel)(const half*, const uint32_t*,
                                                 const int*);
 
 template <bool first_block, int m_count, bool bias_one>
+__launch_bounds__(BLOCK_KN_SIZE)
 __global__ void gemm_half_q_half_gptq_4bit_kernel(
     const half* __restrict__ a, const uint32_t* __restrict__ b_q_weight,
     const uint32_t* __restrict__ b_gptq_qzeros,
@@ -351,6 +352,7 @@ __global__ void gemm_half_q_half_gptq_2bit_kernel(
 }
 
 template <bool first_block, int m_count>
+__launch_bounds__(BLOCK_KN_SIZE)
 __global__ void gemm_half_q_half_gptq_3bit_kernel(
     const half* __restrict__ a, const uint32_t* __restrict__ b_q_weight,
     const uint32_t* __restrict__ b_gptq_qzeros,
@@ -479,6 +481,7 @@ __global__ void gemm_half_q_half_gptq_3bit_kernel(
 }
 
 template <bool first_block, int m_count>
+__launch_bounds__(BLOCK_KN_SIZE)
 __global__ void gemm_half_q_half_gptq_8bit_kernel(
     const half* __restrict__ a, const uint32_t* __restrict__ b_q_weight,
     const uint32_t* __restrict__ b_gptq_qzeros,
