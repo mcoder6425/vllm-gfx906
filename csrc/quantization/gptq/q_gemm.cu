@@ -544,9 +544,9 @@ __global__ void gemm_half_q_half_gptq_8bit_kernel(
 
   // Initial group
   int zeros[4];
-  half scales[4];
+  float scales[4];
   b_gptq_qzeros_.item4(zeros, group, n);
-  b_gptq_scales_.item4(scales, group, n);
+  b_gptq_scales_.item4_f(scales, group, n);
   // Column result
   float block_c[m_count][4] = {};
 
@@ -557,7 +557,7 @@ __global__ void gemm_half_q_half_gptq_8bit_kernel(
       group++;
       nextgroup += groupsize;
       b_gptq_qzeros_.item4(zeros, group, n);
-      b_gptq_scales_.item4(scales, group, n);
+      b_gptq_scales_.item4_f(scales, group, n);
     }
 
 #pragma unroll
@@ -578,21 +578,15 @@ __global__ void gemm_half_q_half_gptq_8bit_kernel(
       dequant_8bit_8(load_int4[0].w, load_int4[1].w, dq[3], size_n,
                      zeros[3] + 1);
 
-      float scalesf[4];
-#pragma unroll
-      for (int i = 0; i < 4; i++) {
-        scalesf[i] = __half2float(scales[i]);
-      }
-
       #pragma unroll
       for (int m = 0; m < m_count; m++) {
-        block_c[m][0] = fma(dot22_8_f(dq[0], a_ptr + m * a_stride), scalesf[0],
-                        block_c[m][0]);
-        block_c[m][1] = fma(dot22_8_f(dq[1], a_ptr + m * a_stride), scalesf[1],
+        block_c[m][0] = fma(dot22_8_f(dq[0], a_ptr + m * a_stride), scales[0],
+                            block_c[m][0]);
+        block_c[m][1] = fma(dot22_8_f(dq[1], a_ptr + m * a_stride), scales[1],
                             block_c[m][1]);
-        block_c[m][2] = fma(dot22_8_f(dq[2], a_ptr + m * a_stride), scalesf[2],
+        block_c[m][2] = fma(dot22_8_f(dq[2], a_ptr + m * a_stride), scales[2],
                             block_c[m][2]);
-        block_c[m][3] = fma(dot22_8_f(dq[3], a_ptr + m * a_stride), scalesf[3],
+        block_c[m][3] = fma(dot22_8_f(dq[3], a_ptr + m * a_stride), scales[3],
                             block_c[m][3]);
       }
       a_ptr += 8;
