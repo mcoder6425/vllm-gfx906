@@ -33,14 +33,19 @@ GGUF is functional and should work. I recommend using q4_1 or q8_0 quants.
 K-quants (e.g. q4_K / q6_K) should work. I-quants (e.g. IQ4 / IQ3) have not
 tested yet.
 
-If you are runing a unquantized bfloat16 model, add '--dtype float16' to the
-parameters for better performance.
-
 Any MoE models with quantization are not expecting to work.
 
 
 NEWS
 -------------------
+
+2025-06-10:
+
+I made some optimization on GPTQ and AWQ kernel. Now, single batch got about 5%
+faster, and batch sizes between 8-32 got about 30%-50% faster.
+
+Update vLLM to 0.9.1
+
 
 2025-05-27:
 
