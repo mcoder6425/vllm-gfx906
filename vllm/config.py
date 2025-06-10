@@ -3257,9 +3257,8 @@ def _get_and_verify_dtype(
     else:
         raise ValueError(f"Unknown dtype: {dtype}")
 
-    _check_valid_dtype(model_type, torch_dtype)
-
     if torch_dtype != config_dtype:
+        _check_valid_dtype(model_type, torch_dtype)
         if torch_dtype == torch.float32:
             # Upcasting to float32 is allowed.
             logger.info("Upcasting %s to %s.", config_dtype, torch_dtype)
