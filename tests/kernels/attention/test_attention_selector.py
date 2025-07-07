@@ -106,10 +106,8 @@ def test_env(
                                                    block_size,
                                                    False,
                                                    use_mla=use_mla)
-                        if use_v1 and name != "TRITON_MLA":
-                            assert backend.get_name() == f"{name}_VLLM_V1"
-                        else:
-                            assert backend.get_name() == name
+                        expected = f"{name}_VLLM_V1" if use_v1 else name
+                        assert backend.get_name() == expected
                     else:
                         with pytest.raises(ValueError) as exc_info:
                             get_attn_backend(16,
@@ -173,7 +171,7 @@ def test_env(
                     expected = "FLASHINFER_VLLM_V1" if use_v1 else name
                     assert backend.get_name() == expected
                 else:
-                    backend = get_attn_backend(16,
+                    backend = get_attn_backend(32,
                                                torch.float16,
                                                torch.float16,
                                                block_size,
@@ -181,6 +179,17 @@ def test_env(
                                                use_mla=use_mla)
                     expected = "FLASH_ATTN_VLLM_V1" if use_v1 else name
                     assert backend.get_name() == expected
+
+                    if use_v1:
+                        backend = get_attn_backend(16,
+                                                   torch.float16,
+                                                   torch.float16,
+                                                   block_size,
+                                                   False,
+                                                   use_mla=use_mla)
+                        assert backend.get_name() == "FLEX_ATTENTION", (
+                            "Should fallback to FlexAttention if head size is "
+                            "not supported by FlashAttention")
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])

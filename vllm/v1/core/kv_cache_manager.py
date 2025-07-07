@@ -21,11 +21,11 @@ logger = init_logger(__name__)
 @dataclass
 class KVCacheBlocks:
     """
-    The allocation result of KVCacheManager, work as the interface between 
-    Scheduler and KVCacheManager, to hide KVCacheManager's internal data 
+    The allocation result of KVCacheManager, work as the interface between
+    Scheduler and KVCacheManager, to hide KVCacheManager's internal data
     structure from the Scheduler.
     """
-    blocks: list[list[KVCacheBlock]]
+    blocks: tuple[list[KVCacheBlock], ...]
     """
     blocks[i][j] refers to the i-th kv_cache_group and the j-th block of tokens.
     We don't use block of tokens as the outer dimension because it assumes all
@@ -37,21 +37,19 @@ class KVCacheBlocks:
     def __add__(self, other: "KVCacheBlocks") -> "KVCacheBlocks":
         """Adds two KVCacheBlocks instances."""
         return KVCacheBlocks(
-            [blk1 + blk2 for blk1, blk2 in zip(self.blocks, other.blocks)])
+            tuple(blk1 + blk2
+                  for blk1, blk2 in zip(self.blocks, other.blocks)))
 
-    def get_block_ids(self) -> list[list[int]]:
+    def get_block_ids(self) -> tuple[list[int], ...]:
         """
         Converts the KVCacheBlocks instance to block_ids.
         
         Returns:
-            list[list[int]]: A two-level list where
-            * the outer list corresponds to KV cache groups
+            tuple[list[int], ...]: A tuple of lists where
+            * the outer tuple corresponds to KV cache groups
             * each inner list contains the block_ids of the blocks in that group
         """
-        block_ids = []
-        for group in self.blocks:
-            block_ids.append([blk.block_id for blk in group])
-        return block_ids
+        return tuple([blk.block_id for blk in group] for group in self.blocks)
 
     def get_unhashed_block_ids(self) -> list[int]:
         """Get block_ids of unhashed blocks from KVCacheBlocks instance."""
@@ -63,7 +61,7 @@ class KVCacheBlocks:
 
     def new_empty(self) -> "KVCacheBlocks":
         """Creates a new KVCacheBlocks instance with no blocks."""
-        return KVCacheBlocks([[] for _ in range(len(self.blocks))])
+        return KVCacheBlocks(tuple([] for _ in range(len(self.blocks))))
 
 
 class KVCacheManager:
@@ -86,12 +84,15 @@ class KVCacheManager:
         self.log_stats = log_stats
         # FIXME: make prefix cache stats conditional on log_stats
         self.prefix_cache_stats = PrefixCacheStats() if log_stats else None
-        assert len(
-            set(g.kv_cache_spec.block_size
-                for g in kv_cache_config.kv_cache_groups)
-        ) == 1, "Only one block size is supported for now"
-        self.block_size = kv_cache_config.kv_cache_groups[
-            0].kv_cache_spec.block_size
+
+        self.block_size: Optional[int] = None
+        if self.enable_caching:
+            assert len(
+                set(g.kv_cache_spec.block_size
+                    for g in kv_cache_config.kv_cache_groups)
+            ) == 1, "Only one block size is supported for now"
+            self.block_size = kv_cache_config.kv_cache_groups[
+                0].kv_cache_spec.block_size
 
         self.coordinator = get_kv_cache_coordinator(
             kv_cache_config=kv_cache_config,
@@ -148,13 +149,15 @@ class KVCacheManager:
         # Prefix caching is disabled or
         # When the request requires prompt logprobs, we skip prefix caching.
         if (not self.enable_caching
-                or request.sampling_params.prompt_logprobs is not None):
+                or (request.sampling_params is not None
+                    and request.sampling_params.prompt_logprobs is not None)):
             return self.create_empty_block_list(), 0
 
         # The block hashes for the request may already be computed
         # if the scheduler has tried to schedule the request before.
         block_hashes = self.req_to_block_hashes[request.request_id]
         if not block_hashes:
+            assert self.block_size is not None
             block_hashes = hash_request_tokens(self.caching_hash_fn,
                                                self.block_size, request)
             self.req_to_block_hashes[request.request_id] = block_hashes
@@ -232,9 +235,8 @@ class KVCacheManager:
         if new_computed_blocks is not None:
             new_computed_block_list = new_computed_blocks.blocks
         else:
-            new_computed_block_list = [
-                [] for _ in range(len(self.kv_cache_config.kv_cache_groups))
-            ]
+            new_computed_block_list = tuple(
+                [] for _ in range(len(self.kv_cache_config.kv_cache_groups)))
 
         # Free the blocks that are skipped during the attention computation
         # (e.g., tokens outside the sliding window).
@@ -267,7 +269,7 @@ class KVCacheManager:
         if self.enable_caching:
             self.block_pool.touch(new_computed_block_list)
         else:
-            assert all(not blocks for blocks in new_computed_block_list), (
+            assert not any(new_computed_block_list), (
                 "Computed blocks should be empty when "
                 "prefix caching is disabled")
 
@@ -378,17 +380,19 @@ class KVCacheManager:
         """
         return self.block_pool.take_events()
 
-    def get_block_ids(self, request_id: str) -> list[list[int]]:
+    def get_block_ids(self, request_id: str) -> tuple[list[int], ...]:
         """Get the block ids of a request."""
         return KVCacheBlocks(
             self.coordinator.get_blocks(request_id)).get_block_ids()
 
-    def cache_blocks(self, request: Request, block_hashes: list[BlockHash],
-                     num_computed_tokens: int) -> None:
-        """Cache the blocks for the request."""
-        self.coordinator.cache_blocks(request, block_hashes,
-                                      num_computed_tokens)
+    def cache_blocks(self, request: Request, num_computed_tokens: int) -> None:
+        """Cache the blocks for the request, if enabled."""
+        if self.enable_caching:
+            block_hashes = self.req_to_block_hashes[request.request_id]
+            self.coordinator.cache_blocks(request, block_hashes,
+                                          num_computed_tokens)
 
     def create_empty_block_list(self) -> KVCacheBlocks:
         """Creates a new KVCacheBlocks instance with no blocks."""
-        return KVCacheBlocks([[] for _ in range(self.num_kv_cache_groups)])
+        return KVCacheBlocks(tuple([]
+                                   for _ in range(self.num_kv_cache_groups)))
