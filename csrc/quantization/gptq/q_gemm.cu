@@ -22,7 +22,7 @@ https://github.com/qwopqwop200/GPTQ-for-LLaMa
 namespace vllm {
 namespace gptq {
 
-#define BLOCK_KN_SIZE 128
+#define BLOCK_KN_SIZE 256
 #define BLOCK_M_SIZE_MAX 8
 #define MAX_GROUPS_IN_BLOCK (BLOCK_KN_SIZE / 32)
 #define MAX_Q_GEMM_ROWS 32
