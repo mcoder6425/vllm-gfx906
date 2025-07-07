@@ -109,8 +109,8 @@ def _fused_mul_mat_gguf(x: torch.Tensor, qweight: torch.Tensor,
     # there is no need to call any kernel for fp16/bf16
     if qweight_type in UNQUANTIZED_TYPES:
         return x @ qweight.T
-    # enable MMVQ in contiguous batching with batch_size<=8
-    if x.shape[0] <= 8 and qweight_type in MMVQ_QUANT_TYPES:
+    # enable MMVQ in contiguous batching with batch_size=1
+    if x.shape[0] == 1 and qweight_type in MMVQ_QUANT_TYPES:
         y = ops.ggml_mul_mat_vec_a8(qweight, x, qweight_type, qweight.shape[0])
     # Use MMQ Kernel if it's available (standard + k-quants)
     elif qweight_type in MMQ_QUANT_TYPES:
