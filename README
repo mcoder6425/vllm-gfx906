@@ -13,8 +13,8 @@ This modified version of vLLM does two things:
 RUN WITH DOCKER
 -------------------
 
-Please install ROCm 6.3 first, only kernel-mode driver is requred. Refer to the
-official documentation by AMD.
+Please install ROCm 6.3 first, only kernel-mode driver is required. Refer to
+the official documentation by AMD.
 
 ```
 docker pull nalanzeyu/vllm-gfx906
@@ -38,6 +38,15 @@ Any MoE models with quantization are not expecting to work.
 
 NEWS
 -------------------
+
+2025-07-08:
+
+Update vLLM to 0.9.2
+
+From this version, V1 engine is default. Startup takes longer time than V0.
+Automatic Prefix Caching is off by default due to performance issues. Needs
+investigating.
+
 
 2025-06-10:
 
