@@ -20,10 +20,10 @@ from vllm.platforms import current_platform
 
 # in priority/performance order (when available)
 _POSSIBLE_KERNELS: list[type[MPLinearKernel]] = [
-    MacheteLinearKernel,
-    AllSparkLinearKernel,
-    MarlinLinearKernel,
-    BitBLASLinearKernel,
+    # MacheteLinearKernel,
+    # AllSparkLinearKernel,
+    # MarlinLinearKernel,
+    # BitBLASLinearKernel,
     ExllamaLinearKernel,
 ]
 
