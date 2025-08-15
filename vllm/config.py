@@ -2130,8 +2130,8 @@ class SchedulerConfig:
     NOTE: This will be replaced by speculative config in the future; it is
     present to enable correctness tests until then."""
 
-    cuda_graph_sizes: list[int] = field(default_factory=lambda: [512])
-    """Cuda graph capture sizes, default is 512.
+    cuda_graph_sizes: list[int] = field(default_factory=lambda: [32])
+    """Cuda graph capture sizes, default is 32.
     1. if one value is provided, then the capture list would follow the
     pattern: [1, 2, 4] + [i for i in range(8, cuda_graph_sizes + 1, 8)]
     2. more than one value (e.g. 1 2 128) is provided, then the capture list
@@ -4696,7 +4696,7 @@ class VllmConfig:
                 self.model_config is not None and \
                     not self.model_config.enforce_eager:
 
-                possible_sizes = [1, 2, 4] + [8 * i for i in range(1, 1025)]
+                possible_sizes = [1, 2, 4] + [8 * i for i in range(1, 5)]
                 if self.parallel_config.tensor_parallel_size > 1 and \
                     self.compilation_config.pass_config.enable_sequence_parallelism:
                     possible_sizes = self.update_sizes_for_sequence_parallelism(
