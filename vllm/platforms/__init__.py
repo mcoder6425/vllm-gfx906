@@ -196,13 +196,13 @@ def neuron_platform_plugin() -> Optional[str]:
 
 
 builtin_platform_plugins = {
-    'tpu': tpu_platform_plugin,
-    'cuda': cuda_platform_plugin,
+    #'tpu': tpu_platform_plugin,
+    #'cuda': cuda_platform_plugin,
     'rocm': rocm_platform_plugin,
-    'hpu': hpu_platform_plugin,
-    'xpu': xpu_platform_plugin,
-    'cpu': cpu_platform_plugin,
-    'neuron': neuron_platform_plugin,
+    #'hpu': hpu_platform_plugin,
+    #'xpu': xpu_platform_plugin,
+    #'cpu': cpu_platform_plugin,
+    #'neuron': neuron_platform_plugin,
 }
 
 
