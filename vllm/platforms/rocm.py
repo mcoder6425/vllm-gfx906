@@ -172,6 +172,11 @@ class RocmPlatform(Platform):
         "quark", "ptpc_fp8"
     ]
 
+    @property
+    def supported_dtypes(self) -> list[torch.dtype]:
+        # no bfloat16 for gfx906
+        return [torch.float16, torch.float32]
+
     @classmethod
     def get_attn_backend_cls(cls, selected_backend, head_size, dtype,
                              kv_cache_dtype, block_size, use_v1,
