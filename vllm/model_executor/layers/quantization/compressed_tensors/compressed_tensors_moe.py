@@ -66,21 +66,14 @@ class CompressedTensorsMoEMethod(FusedMoEMethodBase):
             "input_activations")
 
         if quant_config._is_wNa16_group_channel(weight_quant, input_quant):
-            # group_size=None means channelwise
-            group_size = weight_quant.group_size or -1
-            # Prefer to use the MarlinMoE kernel when it is supported.
-            if not check_moe_marlin_supports_layer(layer, group_size):
-                if (weight_quant.strategy in QuantizationStrategy.GROUP and
-                        weight_quant.actorder in (ActivationOrdering.GROUP,
-                                                  ActivationOrdering.DYNAMIC)):
-                    raise ValueError(
-                        "WNA16MoE is not supported with actorder=group/dynamic."
-                    )
-                logger.info_once("Using CompressedTensorsWNA16MoEMethod")
-                return CompressedTensorsWNA16MoEMethod(quant_config)
-            else:
-                logger.info_once("Using CompressedTensorsWNA16MarlinMoEMethod")
-                return CompressedTensorsWNA16MarlinMoEMethod(quant_config)
+            if (weight_quant.strategy in QuantizationStrategy.GROUP and
+                    weight_quant.actorder in (ActivationOrdering.GROUP,
+                                                ActivationOrdering.DYNAMIC)):
+                raise ValueError(
+                    "WNA16MoE is not supported with actorder=group/dynamic."
+                )
+            logger.info_once("Using CompressedTensorsWNA16MoEMethod")
+            return CompressedTensorsWNA16MoEMethod(quant_config)
         elif quant_config._is_fp4a4_nvfp4(weight_quant, input_quant):
             return CompressedTensorsW4A4MoeMethod()
         elif quant_config._is_fp8_w8a8_sm90(weight_quant, input_quant):
