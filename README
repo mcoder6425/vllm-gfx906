@@ -24,20 +24,34 @@ docker run -it --rm --shm-size=2g --device=/dev/kfd --device=/dev/dri \
 ```
 
 
-NOTES
+SUPPORT QUANTIZATIONS
 -------------------
 
 GPTQ and AWQ are the first recommended quantization formats.
+
+vLLM's llm-compressor with W4A16 INT format is also recommended. Other formats
+in llm-compressor are not support.
 
 GGUF is functional and should work. I recommend using q4_1 or q8_0 quants.
 K-quants (e.g. q4_K / q6_K) should work. I-quants (e.g. IQ4 / IQ3) have not
 tested yet.
 
-Any MoE models with quantization are not expecting to work.
+MoE quantization models only work with llm-compressor W4A16 INT format. And
+such models are a bit slow, still need more optimization.
+
+Any non-quantized models are not optimized at all and expected be very slow.
 
 
 NEWS
 -------------------
+
+2025-08-16:
+
+Add support for quantized MoE models. Fix support for vLLM's llm-compressor.
+
+Switch back to V0 engine by default. Many users have reported a significant
+performance drop after upgrading to V1.
+
 
 2025-07-08:
 
