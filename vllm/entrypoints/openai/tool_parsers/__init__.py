@@ -15,6 +15,7 @@ from .minimax_tool_parser import MinimaxToolParser
 from .mistral_tool_parser import MistralToolParser
 from .phi4mini_tool_parser import Phi4MiniJsonToolParser
 from .pythonic_tool_parser import PythonicToolParser
+from .seed_oss_tool_parser import SeedOssToolParser
 from .xlam_tool_parser import xLAMToolParser
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "Llama4PythonicToolParser", "PythonicToolParser", "Phi4MiniJsonToolParser",
     "DeepSeekV3ToolParser", "xLAMToolParser", "MinimaxToolParser",
     "Glm4MoeModelToolParser",
+    "SeedOssToolParser",
 ]
