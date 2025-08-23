@@ -16,7 +16,7 @@ from .MPLinearKernel import MPLinearKernel, MPLinearLayerConfig
 
 
 class ExllamaLinearKernel(MPLinearKernel):
-    SUPPORTED_QUANT_TYPES = [scalar_types.uint4b8, scalar_types.uint8b128]
+    SUPPORTED_QUANT_TYPES = [scalar_types.uint4b8, scalar_types.uint8b128, scalar_types.uint4]
     # In theory supports `scalar_types.uint2b2, scalar_types.uint3b4` too but
     # currently untested so not added to the list
 
@@ -55,31 +55,25 @@ class ExllamaLinearKernel(MPLinearKernel):
 
     def process_weights_after_loading(self, layer: torch.nn.Module):
         c = self.config
+        device = getattr(layer, self.w_q_name).device
 
-        # For Exllama, we need to set a zero-point tensor if there is not one
-        if not c.zero_points:
+        if c.zero_points:
+            def transform_w_zp(x):
+                permute_param_layout_(x, input_dim=0, output_dim=1)
+                return x.data.contiguous()
+            self._transform_param(layer, self.w_zp_name, transform_w_zp)
+        else:
+            # For Exllama, we need to set a zero-point tensor if there is not one
             self.w_zp_name = "qzeros"
-            device = getattr(layer, self.w_q_name).device
+            assert c.weight_type.has_bias()
             groups = c.partition_weight_shape[0] // c.group_size
             out_features = c.partition_weight_shape[1]
-
-            if c.weight_type.has_bias():
-                # if the type has a bias we have to create a zeros tensor that
-                # contains the bias values repeated for each group (-1 due to
-                # a bug in the original GPTQ checkpoint format leading to
-                # exllama kernel adding 1 to the zero points during inference)
-                # Documentation of the bug can be found here:
-                #  https://garden.danieldk.eu/GPTQ-Checkpoint-Format
-                zeros = torch.full((groups, out_features),
-                                   c.weight_type.bias - 1,
-                                   dtype=torch.int32,
-                                   device=device)
-            else:
-                raise NotImplementedError(
-                    "A 0 zero-point is not supported by Exllama due to "
-                    "a bug in the original GPTQ checkpoint format leading to "
-                    "exllama kernel adding 1 to the zero points during "
-                    "inference")
+            # exllama kernel in nlzy/vllm-gfx906 allow to passing bias_one=False,
+            # no need to subtract 1 here
+            zeros = torch.full((groups, out_features),
+                                c.weight_type.bias,
+                                dtype=torch.int32,
+                                device=device)
             zeros = pack_quantized_values_into_int32(zeros,
                                                      c.weight_type,
                                                      packed_dim=1)
@@ -87,7 +81,6 @@ class ExllamaLinearKernel(MPLinearKernel):
                     torch.nn.Parameter(zeros, requires_grad=False))
 
         if c.has_g_idx:
-
             def transform_w_g_idx(x):
                 # Exllama wants the permutation array instead of the group
                 # indices
@@ -135,7 +128,7 @@ class ExllamaLinearKernel(MPLinearKernel):
 
         assert w_zp is not None, "Zero points are required by Exllama"
         assert w_g_idx is not None, "Group index is required by Exllama"
-        output = ops.gptq_gemm(x_2d, w_q, w_zp, w_s, w_g_idx, True, True,
+        output = ops.gptq_gemm(x_2d, w_q, w_zp, w_s, w_g_idx, True, False,
                                c.weight_type.size_bits)
 
         if bias is not None:
