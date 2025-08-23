@@ -45,6 +45,18 @@ Any non-quantized models are not optimized at all and expected be very slow.
 NEWS
 -------------------
 
+2025-08-24:
+
+Backported support for GLM 4.5 (thanks to @anikifoss).
+
+Added support for quantized MoE models packed in AWQ / GPTQ formats. Add
+support for asymmetric quantization in ExllamaLinearKernel.
+
+Optimized the exllama 8-bit dequant kernel, making 8-bit GPTQ dense models 10%
+faster at low batch sizes. Disable bf16, explicitly adding --dtype float16 is
+no longer necessary.
+
+
 2025-08-16:
 
 Add support for quantized MoE models. Fix support for vLLM's llm-compressor.
