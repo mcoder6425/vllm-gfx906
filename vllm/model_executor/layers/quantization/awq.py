@@ -127,9 +127,6 @@ class AWQConfig(QuantizationConfig):
                 f"AWQ, but got {self.weight_bits} bits.")
         self.pack_factor = 32 // self.weight_bits
 
-        logger.info("[vllm-gfx906] You are using AWQ with exllama kernel, "
-                    "this is differ from the offical vLLM.")
-
     def __repr__(self) -> str:
         return (f"AWQConfig(weight_bits={self.weight_bits}, "
                 f"group_size={self.group_size}, "
@@ -169,36 +166,26 @@ class AWQConfig(QuantizationConfig):
         if isinstance(layer, LinearBase):
             if is_layer_skipped_awq(prefix, self.modules_to_not_convert):
                 return UnquantizedLinearMethod()
+            logger.warning_once(
+                "[vllm-gfx906] You are using AWQ with exllama kernel, "
+                "this is differ from the offical vLLM.")
             return AWQLinearMethod(self)
         elif isinstance(layer, FusedMoE):
             # Lazy import to avoid circular import.
-            from .awq_marlin import AWQMarlinConfig, AWQMoEMethod
             from .moe_wna16 import MoeWNA16Config
-            from .utils.marlin_utils import check_moe_marlin_supports_layer
-            if not check_moe_marlin_supports_layer(layer, self.group_size):
-                logger.warning_once(
-                    f"Layer '{prefix}' is not supported by AWQMoeMarlin. "
-                    "Falling back to Moe WNA16 kernels.")
-                config = {
-                    "quant_method": "awq",
-                    "bits": self.weight_bits,
-                    "group_size": self.group_size,
-                    "zero_point": self.zero_point,
-                    "lm_head": False,
-                }
-                return MoeWNA16Config.from_config(config).get_quant_method(
-                    layer, prefix)
-            marlin_compatible_config_dict = {
+            config = {
                 "quant_method": "awq",
                 "bits": self.weight_bits,
                 "group_size": self.group_size,
                 "zero_point": self.zero_point,
                 "lm_head": False,
-                "modules_to_not_convert": self.modules_to_not_convert,
             }
-            awq_marlin_config = AWQMarlinConfig.from_config(
-                marlin_compatible_config_dict)
-            return AWQMoEMethod(awq_marlin_config)
+            logger.warning_once(
+                "[vllm-gfx906] You are using modified MoeWNA16 kernel, "
+                "this is differ from the offical vLLM.")
+            return MoeWNA16Config.from_config(config).get_quant_method(
+                layer, prefix)
+
         return None
 
 

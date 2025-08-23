@@ -120,7 +120,6 @@ class GPTQConfig(QuantizationConfig):
         if isinstance(layer, FusedMoE):
             # GPTQ MoE support: fall back to MoeWNA16 for broad compatibility
             from .moe_wna16 import MoeWNA16Config
-
             config = {
                 "quant_method": "gptq",
                 "bits": self.weight_bits,
@@ -128,6 +127,9 @@ class GPTQConfig(QuantizationConfig):
                 "sym": True,  # GPTQ typically uses symmetric quantization
                 "lm_head": False,
             }
+            logger.warning_once(
+                "[vllm-gfx906] You are using modified MoeWNA16 kernel, "
+                "this is differ from the offical vLLM.")
             return MoeWNA16Config.from_config(config).get_quant_method(
                 layer, prefix)
 
