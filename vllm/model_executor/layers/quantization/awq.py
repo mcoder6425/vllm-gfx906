@@ -185,7 +185,6 @@ class AWQConfig(QuantizationConfig):
                 "this is differ from the offical vLLM.")
             return MoeWNA16Config.from_config(config).get_quant_method(
                 layer, prefix)
-
         return None
 
 
