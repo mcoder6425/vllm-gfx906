@@ -45,6 +45,12 @@ Any non-quantized models are not optimized at all and expected be very slow.
 NEWS
 -------------------
 
+2025-08-31:
+
+Backport support for ByteDance Seed OSS, update transformers to 4.56.0 in
+pre-built docker image.
+
+
 2025-08-24:
 
 Backported support for GLM 4.5 (thanks to @anikifoss).
