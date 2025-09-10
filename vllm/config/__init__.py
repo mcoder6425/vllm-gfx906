@@ -3737,7 +3737,8 @@ class VllmConfig:
                 self.model_config is not None and \
                     not self.model_config.enforce_eager:
 
-                possible_sizes = [1, 2, 4] + [8 * i for i in range(1, 5)]
+                # NOTE(gfx906): reduce to 128
+                possible_sizes = [1, 2, 4] + [8 * i for i in range(1, 17)]
                 if self.parallel_config.tensor_parallel_size > 1 and \
                     self.compilation_config.pass_config.enable_sequence_parallelism:
                     possible_sizes = self.update_sizes_for_sequence_parallelism(
