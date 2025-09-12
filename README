@@ -40,6 +40,11 @@ are slightly slow. Not recommended to use.
 NEWS
 -------------------
 
+2025-09-12:
+
+Minor optimize in triton_unified_attention, reduce VRAM usage of AWQ
+
+
 2025-09-10:
 
 Update vLLM to v0.10.1
